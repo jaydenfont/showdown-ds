@@ -7,7 +7,6 @@ import android.view.View
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.view.MotionEvent
 import android.webkit.JavascriptInterface
 import android.os.Handler
 import android.os.Looper
@@ -60,9 +59,11 @@ class ShowdownMoveEffectsView(
     init {
         setBackgroundColor(Color.BLACK)
         setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        isClickable = false
+        isClickable = true
         isFocusable = false
         isFocusableInTouchMode = false
+        settings.setSupportZoom(false)
+        settings.builtInZoomControls = false
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.loadsImagesAutomatically = true
@@ -209,8 +210,6 @@ class ShowdownMoveEffectsView(
             cleanup()
         }
     }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean = false
 
     private fun flushPendingPackets(allowSeedWhilePaused: Boolean = false) {
         if ((!allowSeedWhilePaused && playbackPaused) || !javascriptReady) return

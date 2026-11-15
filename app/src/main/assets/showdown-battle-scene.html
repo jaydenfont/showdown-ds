@@ -640,7 +640,10 @@
                 var queuedLines = [];
                 var queuedIdentities = [];
                 lines.forEach(function (line, index) {
-                    if (line.indexOf('|request|') === 0) return;
+                    if (line.indexOf('|request|') === 0) {
+                        rememberOwnTeam(line);
+                        return;
+                    }
                     queuedLines.push(line);
                     queuedIdentities.push(protocolLineIdentities[index] || []);
                 });
@@ -662,6 +665,78 @@
                     battle.add(line);
                 });
             }
+            var ownTeam = null;
+            function rememberOwnTeam(requestLine) {
+                try {
+                    var request = JSON.parse(requestLine.slice('|request|'.length));
+                    if (request && request.side && request.side.pokemon) ownTeam = request.side.pokemon;
+                } catch (error) {
+                    // A request without a team (for example a wait request) carries nothing to remember.
+                }
+            }
+            var TOOLTIP_DATA_URLS = [
+                'https://play.pokemonshowdown.com/data/pokedex.js',
+                'https://play.pokemonshowdown.com/data/moves.js',
+                'https://play.pokemonshowdown.com/data/items.js',
+                'https://play.pokemonshowdown.com/data/abilities.js',
+                'https://play.pokemonshowdown.com/data/aliases.js'
+            ];
+            var tooltipDataReady = false;
+            var tooltipDataLoading = false;
+            var tooltipDataWaiters = [];
+            function loadTooltipData(onReady) {
+                if (tooltipDataReady) {
+                    onReady();
+                    return;
+                }
+                tooltipDataWaiters.push(onReady);
+                if (tooltipDataLoading) return;
+                tooltipDataLoading = true;
+                var remaining = TOOLTIP_DATA_URLS.length;
+                TOOLTIP_DATA_URLS.forEach(function (url) {
+                    var script = document.createElement('script');
+                    script.src = url;
+                    script.onload = script.onerror = function () {
+                        remaining -= 1;
+                        if (remaining > 0) return;
+                        tooltipDataReady = true;
+                        tooltipDataWaiters.splice(0).forEach(function (waiter) { waiter(); });
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+            var TOOLTIP_SCALE_SHARE = 0.7;
+            var TOOLTIP_EDGE_MARGIN = 8;
+            function fitTooltipToScreen() {
+                var wrapper = document.getElementById('tooltipwrapper');
+                var tip = wrapper && wrapper.querySelector('.tooltip');
+                if (!tip) return;
+                var scale = Math.max(1, Math.min(window.innerWidth / 640, window.innerHeight / 360) * TOOLTIP_SCALE_SHARE);
+                tip.style.transformOrigin = '0 100%';
+                tip.style.transform = 'scale(' + scale + ')';
+                var box = tip.getBoundingClientRect();
+                var left = parseFloat(wrapper.style.left) || 0;
+                var top = parseFloat(wrapper.style.top) || 0;
+                if (box.right > window.innerWidth - TOOLTIP_EDGE_MARGIN) left -= box.right - window.innerWidth + TOOLTIP_EDGE_MARGIN;
+                if (box.bottom > window.innerHeight - TOOLTIP_EDGE_MARGIN) top -= box.bottom - window.innerHeight + TOOLTIP_EDGE_MARGIN;
+                if (box.top < TOOLTIP_EDGE_MARGIN) top += TOOLTIP_EDGE_MARGIN - box.top;
+                wrapper.style.left = Math.max(TOOLTIP_EDGE_MARGIN, left) + 'px';
+                wrapper.style.top = top + 'px';
+            }
+            function revealTooltip(target) {
+                if (!battle || !battle.scene.tooltips) return;
+                loadTooltipData(function () {
+                    if (ownTeam) ownTeam.forEach(function (pokemon) { battle.parseHealth(String(pokemon.condition || ''), pokemon); });
+                    battle.myPokemon = ownTeam;
+                    battle.scene.tooltips.showTooltip(target);
+                    battle.scene.tooltips.lockTooltip();
+                    fitTooltipToScreen();
+                });
+            }
+            document.addEventListener('click', function (event) {
+                var target = event.target && event.target.closest ? event.target.closest('.has-tooltip') : null;
+                if (target) revealTooltip(target);
+            });
             window.addEventListener('resize', layout);
             window.ShowdownNativeEffects = {
                 seed: function (lines, effectsBarrierToken) {

@@ -11,7 +11,7 @@ Agreed with the developer before work started.
 7. **Testing.** Assume the Showdown WebView is correct; test only that the view exists and loads. Our own bridge tests stay. Tests are behavioral, named `Thing_Scenario_Expected`, no mocks.
 8. **Repo essentials.** `AGENTS.md`, `build.sh --test`, `emulate.sh` now; ask before adding ktlint; Dockerfile last.
 9. **Lightweight (no-WebView) mode removed.** WebView is required; a clear error shows if it is unavailable.
-10. **Top screen is display-only** (no tap-to-inspect).
+10. **Top screen is display-only** (no tap-to-inspect). *Reversed 2026-11-15 (decision 19).*
 11. **Accessibility gap accepted.** The WebView scene has no accessibility tree; the same information stays reachable from the lower screen. Documented in `inconsistencies.md`.
 12. **Embedded JS moves to assets.**
 13. **Order of work:** scaffolding, reopening-battle fix + Resume/Forfeit, WebView-core top screen, Pokémon-tab overlays, cleanup/tests/lint. Run to completion unless blocked.
@@ -23,3 +23,5 @@ Agreed with the developer before work started.
 19. **The finished battle stays on screen** until the battle room is cleared (like the web client), instead of dropping to the lobby card when playback drains.
 
 18. **Live battles are not paced by the app** (decided 2026-11-15 after the Thor lagged behind the browser). Room packets are applied to the session at once and handed to the web scene, which queues and paces its own animations like the browser client. The lower screen (HP overlays, result) can therefore be ahead of the top screen during a turn; the Activity log still follows the scene. Packets that already hold past turns are caught up silently (`ShowdownBattleDelivery`). Replays keep the chunked, paced playback because of their pause and speed controls.
+
+19. **Tapping a Pokémon on the top screen shows Showdown's own tooltip** (types, HP, ability candidates, speed range, known moves with PP, and for the player's side item, ability and stats), as hovering does in the browser. Reverses decision 10 at the user's request. The page keeps the latest `|request|` team (the scene's own copy is cleared when the battle starts), loads Showdown's species, move, item and ability data on the first tap instead of at battle start, scales the tooltip to the screen and keeps it on screen. Tapping elsewhere dismisses it.
