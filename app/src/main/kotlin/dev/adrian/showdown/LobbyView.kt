@@ -29,12 +29,17 @@ object LobbyAccessibility {
  */
 class LobbyView(
     context: Context,
-    private val session: BattleSession
+    private var session: BattleSession
 ) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val source = Rect()
     private val destination = RectF()
     private val logo: Bitmap? = BitmapFactory.decodeResource(resources, R.drawable.showdown_logo)
+
+    fun bindSession(next: BattleSession) {
+        session = next
+        invalidate()
+    }
 
     init {
         setWillNotDraw(false)

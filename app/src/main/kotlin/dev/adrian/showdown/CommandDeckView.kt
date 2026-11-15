@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
 
 class CommandDeckView(
     context: Context,
-    private val session: BattleSession,
+    private var session: BattleSession,
     private val spriteCache: ShowdownSpriteCache,
     private val interactionListener: InteractionListener
 ) : View(context) {
@@ -86,6 +86,12 @@ class CommandDeckView(
     private var lastRenderedDecisionKind: BattleSession.DecisionKind? = null
     private var animationsPaused = false
     private var accessibilityNodeProvider: CanvasAccessibilityNodeProvider? = null
+
+    /** Shows another battle's session; its state starts from scratch on the next draw. */
+    fun bindSession(next: BattleSession) {
+        session = next
+        invalidate()
+    }
 
     init {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES

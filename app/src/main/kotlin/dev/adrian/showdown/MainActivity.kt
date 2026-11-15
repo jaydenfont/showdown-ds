@@ -112,6 +112,19 @@ class MainActivity : Activity() {
     private var serverUserNamed = false
     private var activeBattleRoomId: String? = null
     private val unfinishedBattles = ShowdownUnfinishedBattles()
+
+    /** One battle the app has open: its own session and web view, and the connection facts that belong to it. */
+    private class BattleRoom(val roomId: String, val session: BattleSession) {
+        var effects: ShowdownMoveEffectsView? = null
+        var wasRegistered = false
+        var wasParticipant = false
+        var isSpectator = false
+        var protocolReady = false
+        var pendingDecisionCommand: String? = null
+        var pendingDecisionSentConnection: ShowdownConnection? = null
+    }
+
+    private val battleRooms = linkedMapOf<String, BattleRoom>()
     private var unfinishedBattlesPromptShown = false
     private var fastForwardingBattleHistory = false
     private var appliedSceneSprites: BattleSceneSprites? = null
@@ -689,17 +702,19 @@ class MainActivity : Activity() {
         showdownMoveEffects?.let { return it }
         val frame = primaryFrame ?: return null
         var effectsView: ShowdownMoveEffectsView? = null
+        val owner = session
+        val ownerIsFocused = { owner === session }
         val effects = try {
             ShowdownMoveEffectsView(
                 this,
-                battleAudio::playBattleCue,
-                battleAudio::resetBattleCues,
-                audioMoveResetter = battleAudio::beginBattleMove,
-                announcerCueListener = battleAudio::playAnnouncerCue,
-                announcerCueResetter = battleAudio::resetAnnouncerCues,
+                { cue -> if (ownerIsFocused()) battleAudio.playBattleCue(cue) },
+                { if (ownerIsFocused()) battleAudio.resetBattleCues() },
+                audioMoveResetter = { if (ownerIsFocused()) battleAudio.beginBattleMove() },
+                announcerCueListener = { cue -> if (ownerIsFocused()) battleAudio.playAnnouncerCue(cue) },
+                announcerCueResetter = { if (ownerIsFocused()) battleAudio.resetAnnouncerCues() },
                 battleLogListener = { value, generation, protocolEventId, protocolMessageIds ->
                     runOnUiThread {
-                        session.appendShowdownBattleLog(
+                        owner.appendShowdownBattleLog(
                             value,
                             generation,
                             protocolEventId,
@@ -708,10 +723,10 @@ class MainActivity : Activity() {
                     }
                 },
                 battleMarkupListener = { key, value, generation ->
-                    runOnUiThread { session.replaceShowdownBattleMarkup(key, value, generation) }
+                    runOnUiThread { owner.replaceShowdownBattleMarkup(key, value, generation) }
                 },
                 battleLogSyncListener = { generation ->
-                    runOnUiThread { session.markNativeBattleLogSynchronized(generation) }
+                    runOnUiThread { owner.markNativeBattleLogSynchronized(generation) }
                 },
                 battleEffectsIdleListener = { token ->
                     runOnUiThread {
@@ -739,6 +754,139 @@ class MainActivity : Activity() {
         appliedSceneSprites = session.sceneSprites
         effects.seed(seedHistory)
         return effects
+    }
+
+    /** Takes the battle scene off the screen but keeps its web view alive, paused, for the room that owns it. */
+    private fun detachBattleScene(): ShowdownMoveEffectsView? {
+        val effects = showdownMoveEffects ?: return null
+        showdownMoveEffects = null
+        primaryFrame?.removeView(effects)
+        battleScene?.visibility = View.VISIBLE
+        effects.setPlaybackPaused(true)
+        return effects
+    }
+
+    /** Puts a room's own web view on the screen and brings it up to date with its battle without replaying it. */
+    private fun attachBattleScene(effects: ShowdownMoveEffectsView) {
+        val frame = primaryFrame ?: return
+        showdownMoveEffects = effects
+        frame.addView(effects, FrameLayout.LayoutParams(-1, -1))
+        battleScene?.visibility = View.INVISIBLE
+        effects.setPerspective(session.battlePlayerSlot())
+        effects.setDsSprites(session.sceneSprites.usesDsGraphics)
+        effects.setPlaybackSpeed(replaySpeed)
+        effects.setPlaybackPaused(false)
+        battleEffectsBarrierSequence += 1L
+        effects.recoverFromProtocolHistory(session.protocolHistory(), battleEffectsBarrierSequence)
+    }
+
+    /** Saves the battle on screen into its room so another one can take its place. */
+    private fun stashFocusedBattle() {
+        val roomId = activeBattleRoomId ?: return
+        val room = battleRooms.getOrPut(roomId) { BattleRoom(roomId, session) }
+        room.wasRegistered = battleWasRegistered
+        room.wasParticipant = battleWasParticipant
+        room.isSpectator = battleIsSpectator
+        room.protocolReady = battleProtocolReady
+        room.pendingDecisionCommand = pendingDecisionCommand
+        room.pendingDecisionSentConnection = pendingDecisionSentConnection
+        room.effects = detachBattleScene()
+    }
+
+    private fun bindSession(next: BattleSession) {
+        if (next === session) return
+        session.removeListener(sessionListener)
+        session.removeProtocolListener(protocolListener)
+        session.removeDecisionListener(decisionListener)
+        session.removeChatListener(chatListener)
+        session.removeFeedbackListener(feedbackListener)
+        session.removeClientActionListener(clientActionListener)
+        session = next
+        session.addListener(sessionListener)
+        session.addProtocolListener(protocolListener)
+        session.addDecisionListener(decisionListener)
+        session.addChatListener(chatListener)
+        session.addFeedbackListener(feedbackListener)
+        session.addClientActionListener(clientActionListener)
+        battleAudio.updateOptions(session)
+        commandDeck?.bindSession(session)
+        battleScene?.bindSession(session)
+        session.setBattleSearchActive(pendingSearch || activeSearchFormat != null)
+    }
+
+    /** Brings another open battle to the screens: its session, its own web view and its own saved connection facts. */
+    private fun focusBattleRoom(roomId: String) {
+        if (roomId == activeBattleRoomId) return
+        val target = battleRooms[roomId] ?: return
+        stashFocusedBattle()
+        clearBattlePlayback()
+        bindSession(target.session)
+        activeBattleRoomId = roomId
+        battleWasRegistered = target.wasRegistered
+        battleWasParticipant = target.wasParticipant
+        battleIsSpectator = target.isSpectator
+        battleProtocolReady = target.protocolReady
+        pendingDecisionCommand = target.pendingDecisionCommand
+        pendingDecisionSentConnection = target.pendingDecisionSentConnection
+        completedBattleRoomId = null
+        val effects = target.effects
+        target.effects = null
+        if (effects != null) attachBattleScene(effects) else ensureShowdownMoveEffects(session.protocolHistory())
+        publishUnfinishedBattleCount()
+        refreshDisplays()
+    }
+
+    private fun routesToBackgroundRoom(roomId: String): Boolean {
+        if (roomId == activeBattleRoomId) return false
+        if (battleRooms.containsKey(roomId)) return true
+        val liveBattleOpen = activeBattleRoomId != null && !session.isBattleFinished()
+        return liveBattleOpen && roomId != pendingBattleJoinRoomId && roomId != leftBattleRoomId
+    }
+
+    /** Applies a packet to a battle that is open but not on screen; it keeps its own state and never touches the screen. */
+    private fun applyBackgroundBattlePacket(roomId: String, lines: List<String>) {
+        if (lines.any { it.startsWith("|noinit|") }) {
+            battleRooms.remove(roomId)
+            return
+        }
+        val room = battleRooms.getOrPut(roomId) {
+            BattleRoom(roomId, BattleSession().also { it.copyConfigurationFrom(session) })
+        }
+        val roomSession = room.session
+        val startsBattle = lines.any { it.startsWith("|init|battle") }
+        val playerSlot = battleProtocolPlayerSlot(lines)
+        playerSlot?.let(roomSession::restoreBattlePlayerSlot)
+        if (startsBattle) room.protocolReady = true
+        room.wasParticipant = room.wasParticipant || playerSlot != null
+        roomSession.setLiveBattleActive(room.protocolReady)
+        if (!room.isSpectator && room.wasParticipant) roomSession.setBattleParticipant(true)
+        BattlePlaybackTiming.chunks(lines).filter { it.isNotEmpty() }.forEach(roomSession::applyProtocolPacket)
+        publishUnfinishedBattleCount()
+        if (!startsBattle) return
+        activeSearchFormat = null
+        pendingSearch = false
+        session.setBattleSearchActive(false)
+        session.setConnectionStatus(ShowdownOngoingBattles.BACKGROUND_STARTED_STATUS)
+    }
+
+    private fun ongoingBattleCount(): Int = (lobbyState.battles.keys + battleRooms.keys + listOfNotNull(activeBattleRoomId)).toSet().size
+
+    /** The battles the app has open, as the Ongoing battles list shows them. */
+    private fun openBattleRooms(): Map<String, ShowdownOngoingBattles.OpenRoom> {
+        stashFocusedBattleSnapshot()
+        return battleRooms.mapValues { (_, room) ->
+            ShowdownOngoingBattles.OpenRoom(
+                title = room.session.battleTitle(),
+                yourTurn = room.session.decisionAvailable && !room.session.isBattleFinished(),
+                finished = room.session.isBattleFinished()
+            )
+        }
+    }
+
+    /** Makes sure the battle on screen is in the registry without moving its web view. */
+    private fun stashFocusedBattleSnapshot() {
+        val roomId = activeBattleRoomId ?: return
+        battleRooms.getOrPut(roomId) { BattleRoom(roomId, session) }
     }
 
     private fun releaseShowdownMoveEffects() {
@@ -1231,10 +1379,6 @@ class MainActivity : Activity() {
             cancelActiveSearch()
             return
         }
-        if (authenticated && lobbyState.battles.isNotEmpty()) {
-            showBattleRoomPicker()
-            return
-        }
         beginBattleSearch()
     }
 
@@ -1282,30 +1426,43 @@ class MainActivity : Activity() {
         }
         pendingSearchTeamPacked = searchTeamPacked
             ?: teamOptions.firstOrNull()?.packed?.takeUnless { usesRandomTeams }
+        if (searchOnOpenConnection()) return
         startLobbyConnection()
     }
 
-    private fun showBattleRoomPicker() {
-        val battles = lobbyState.battles.entries.toList()
-        val labels = listOf("Find a new battle") + battles.map { (roomId, description) -> "$description\n$roomId" }
-        val searchValues = listOf("find a new battle") + battles.map { (roomId, description) -> "$description $roomId" }
-        ShowdownDialogBuilder(this)
-            .setTitle("Showdown rooms")
-            .setSearchableSingleChoiceItems(
-                "Search live battles or players",
-                labels,
-                -1,
-                searchValues
-            ) { _, selected ->
-                if (selected == 0) {
-                    beginBattleSearch()
-                } else {
-                    val roomId = battles[selected - 1].key
-                    joinSpectatorBattle(roomId)
-                }
-            }
-            .setNegativeButton("Close", null)
-            .show()
+    /**
+     * Queues the search on the connection that is already signed in, so an open battle and any other battle on the
+     * account stay connected. Returns false when there is no usable connection and a new one must be opened.
+     */
+    private fun searchOnOpenConnection(): Boolean {
+        val connection = showdownConnection ?: return false
+        if (!authenticated || activeSearchFormat != null) return false
+        if (activeBattleRoomId == null || session.isBattleFinished()) leaveBattleForLobby()
+        pendingLobbyCommands = null
+        pendingLobbyStatus = null
+        pendingSearch = true
+        sendPendingLobbyCommands(connection)
+        if (!pendingSearch) return true
+        pendingSearch = false
+        return false
+    }
+
+    /** Clears the battle the screens still show, once it has finished, so the lobby and the search status come back. */
+    private fun leaveBattleForLobby() {
+        activeBattleRoomId?.let(battleRooms::remove)
+        releaseShowdownMoveEffects()
+        session.setReplayMode(false)
+        session.prepareForLobby()
+        session.setLiveBattleActive(false)
+        activeBattleRoomId = null
+        battleWasRegistered = false
+        battleWasParticipant = false
+        battleIsSpectator = false
+        completedBattleRoomId = null
+        battleProtocolReady = false
+        pendingDecisionCommand = null
+        pendingDecisionSentConnection = null
+        clearBattlePlayback()
     }
 
     private fun joinSpectatorBattle(roomId: String) {
@@ -2410,6 +2567,11 @@ class MainActivity : Activity() {
         pendingSearch = false
         pendingSearchTeamPacked = null
         reconnectLobbyCommands = null
+        if (showdownConnection != null && authenticated) {
+            persistLobbyState()
+            session.setConnectionStatus("Battle search cancelled.")
+            return
+        }
         shouldMaintainConnection = false
         reconnectHandler.removeCallbacksAndMessages(null)
         reconnectHandler.removeCallbacks(battleRejoinTimeout)
@@ -3042,6 +3204,10 @@ class MainActivity : Activity() {
                         if (unfinishedBattles.isHeld(roomId)) {
                             unfinishedBattles.holdPacket(roomId, lines)
                             publishUnfinishedBattleCount(promptForNewBattles = true)
+                            return@runOnUiThread
+                        }
+                        if (routesToBackgroundRoom(roomId)) {
+                            applyBackgroundBattlePacket(roomId, lines)
                             return@runOnUiThread
                         }
                         applyBattleRoomPacket(connection, roomId, lines)
@@ -6282,7 +6448,7 @@ class MainActivity : Activity() {
     private fun publishUnfinishedBattleCount(promptForNewBattles: Boolean = false) {
         val count = unfinishedBattles.entries().size
         session.setUnfinishedBattleCount(count)
-        session.setOngoingBattleCount(lobbyState.battles.size)
+        session.setOngoingBattleCount(ongoingBattleCount())
         val shouldPrompt = promptForNewBattles && unfinishedBattles.isReadyToPresent() &&
             activeBattleRoomId == null && !unfinishedBattlesPromptShown
         if (!shouldPrompt) return
@@ -6292,8 +6458,8 @@ class MainActivity : Activity() {
 
     /** Lists every battle the account has going; choosing one never opens it without a further tap. */
     private fun showOngoingBattles() {
-        session.setOngoingBattleCount(lobbyState.battles.size)
-        val rows = ShowdownOngoingBattles.rows(lobbyState.battles, unfinishedBattles.entries(), activeBattleRoomId)
+        session.setOngoingBattleCount(ongoingBattleCount())
+        val rows = ShowdownOngoingBattles.rows(lobbyState.battles, unfinishedBattles.entries(), activeBattleRoomId, openBattleRooms())
         if (rows.isEmpty()) {
             session.setConnectionStatus(ShowdownOngoingBattles.EMPTY_STATUS)
             return
@@ -6310,6 +6476,7 @@ class MainActivity : Activity() {
             ShowdownOngoingBattles.Kind.HELD ->
                 unfinishedBattles.entries().firstOrNull { it.roomId == row.roomId }?.let(::showUnfinishedBattleActions)
             ShowdownOngoingBattles.Kind.OPEN -> session.setConnectionStatus(ShowdownOngoingBattles.OPEN_STATUS)
+            ShowdownOngoingBattles.Kind.SWITCHABLE -> focusBattleRoom(row.roomId)
             ShowdownOngoingBattles.Kind.JOINABLE -> ShowdownDialogBuilder(this)
                 .setTitle(ShowdownOngoingBattles.JOIN_TITLE)
                 .setMessage(row.label)

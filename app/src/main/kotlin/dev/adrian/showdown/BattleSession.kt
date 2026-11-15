@@ -845,6 +845,13 @@ class BattleSession {
 
     fun isBattleFinished() = battleFinished
 
+    /** "Ash vs. Gary" from the players' names, or a plain label until both are known. */
+    fun battleTitle(): String {
+        val first = sideNames["p1"]?.takeIf(String::isNotBlank)
+        val second = sideNames["p2"]?.takeIf(String::isNotBlank)
+        return if (first != null && second != null) "$first vs. $second" else "Battle"
+    }
+
     fun battleResult() = terminalBattleResult.takeIf { battleFinished && it.isNotBlank() }
 
     fun battleInfo() = BattleInfo(
@@ -1486,6 +1493,25 @@ class BattleSession {
         } else {
             protocolHistory()
         }
+    }
+
+    /** Gives the session of a battle that is joining the same account name, preferences, formats and menu state. */
+    fun copyConfigurationFrom(other: BattleSession) {
+        other.localUsername?.let(::setLocalUsername)
+        applyUserPreferences(
+            soundEffects = other.soundEffectsEnabled,
+            music = other.musicEnabled,
+            haptics = other.hapticsEnabled,
+            announcer = other.announcerEnabled,
+            sceneSprites = other.sceneSprites
+        )
+        availableMatchFormats.clear()
+        availableMatchFormats += other.availableMatchFormats
+        matchFormat = other.matchFormat
+        battleSearchActive = other.battleSearchActive
+        unfinishedBattleCount = other.unfinishedBattleCount
+        ongoingBattleCount = other.ongoingBattleCount
+        notifyListeners()
     }
 
     fun setLocalUsername(username: String) {
