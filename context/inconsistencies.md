@@ -21,3 +21,5 @@ Behavior that looks wrong or inconsistent, found while working. Newest first.
 ## Resolved
 
 - **The `.debug` app reopened the same battle on every launch.** Fixed in step 2; see `worklog.md`.
+
+- **Release workflow built the wrong commit.** A manual `workflow_dispatch` run on `main` checked out `main`, not the tag it was given, so `v0.2.0-alpha.1` shipped the old native renderer (terrain layer covering the scene). Fixed by checking out `inputs.tag || github.ref`. Verified on the device: the APK had no `showdown-battle-scene.html` and still contained `BattleSceneView`.
