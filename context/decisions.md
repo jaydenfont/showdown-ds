@@ -27,3 +27,8 @@ Agreed with the developer before work started.
 19. **Tapping a Pokémon on the top screen shows Showdown's own tooltip** (types, HP, ability candidates, speed range, known moves with PP, and for the player's side item, ability and stats), as hovering does in the browser. Reverses decision 10 at the user's request. The page keeps the latest `|request|` team (the scene's own copy is cleared when the battle starts), loads Showdown's species, move, item and ability data on the first tap instead of at battle start, scales the tooltip to the screen and keeps it on screen. Tapping elsewhere dismisses it.
 
 20. **Fresh launches restore nothing about battles or searches** (2026-11-15). Replaces the release-build auto-resume from decision 7: only a system-recreated activity reopens its battle room. Everything else goes through the unfinished-battle prompt, which only lists battles the server still reports.
+
+21. **Switch selection indicator, sprite style and ongoing battles** (2026-11-15, user requests).
+    - A round check badge marks the team member a switch would send out (teal) or has already chosen (gold), on the Pokémon tab (`BattleSession.teamSelectionMark`).
+    - Menu item 8 now toggles the battle scene between 3D and DS (Gen 5) sprites through Showdown's own `bwgfx` preference. The older single-value native sprite style is unchanged, so the Pokémon-tab icons stay 3D. A running scene is rebuilt from history to pick the change up.
+    - Menu item 15, "Ongoing battles", lists every game the server reports for the account. It opens nothing by itself: a held battle offers Resume/Forfeit/Later, a battle started elsewhere offers Open/Later, and the open one just says so. The one-time unfinished-battle prompt after login is unchanged.

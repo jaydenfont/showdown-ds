@@ -2302,6 +2302,9 @@ class CommandDeckView(
                 canvas.drawText(if (previewPosition >= 0) "${previewPosition + 1}" else "—", marker.centerX(), marker.centerY() + 8f * scale, paint)
                 paint.textAlign = Paint.Align.LEFT
             }
+            if (!opponentTeamVisible) {
+                session.teamSelectionMark(teamIndex)?.let { mark -> drawTeamSelectionMark(canvas, bounds, mark, scale) }
+            }
             canvas.save()
             canvas.clipRect(bounds)
             val content = SwitchTeamLayout.contentBounds(
@@ -2832,7 +2835,34 @@ class CommandDeckView(
         11 -> "Account"
         12 -> "Server"
         13 -> if (entry == "Replay controls") "Replay controls" else "Battle controls"
-        else -> if (entry == "Save replay") "Save replay" else "Timer: ${entry.substringAfterLast(' ')}"
+        BattleSession.TIMER_MENU_INDEX -> if (entry == "Save replay") "Save replay" else "Timer: ${entry.substringAfterLast(' ')}"
+        else -> entry
+    }
+
+    /** A round check badge in the card's top-right corner: teal for the member picked now, gold once it is chosen. */
+    private fun drawTeamSelectionMark(canvas: Canvas, bounds: RectF, mark: BattleSession.TeamSelectionMark, scale: Float) {
+        val chosen = mark == BattleSession.TeamSelectionMark.CHOSEN
+        val radius = 26f * scale
+        val centreX = bounds.right - 16f * scale - radius
+        val centreY = bounds.top + 16f * scale + radius
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.color = if (chosen) Color.rgb(232, 181, 58) else Color.rgb(45, 162, 157)
+        canvas.drawCircle(centreX, centreY, radius, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 5f * scale
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        paint.color = if (chosen) Color.rgb(40, 28, 4) else Color.WHITE
+        val check = Path().apply {
+            moveTo(centreX - 11f * scale, centreY + 1f * scale)
+            lineTo(centreX - 3f * scale, centreY + 9f * scale)
+            lineTo(centreX + 12f * scale, centreY - 9f * scale)
+        }
+        canvas.drawPath(check, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+        paint.strokeJoin = Paint.Join.MITER
+        paint.style = Paint.Style.FILL
     }
 
     private fun searchActionLabel() = if (session.isBattleSearchActive()) "Cancel search" else "Find battle"

@@ -114,6 +114,7 @@ class MainActivity : Activity() {
     private val unfinishedBattles = ShowdownUnfinishedBattles()
     private var unfinishedBattlesPromptShown = false
     private var fastForwardingBattleHistory = false
+    private var appliedSceneSprites: BattleSceneSprites? = null
     private var devLoginUsername: String? = null
     private var battleWasRegistered = false
     private var battleWasParticipant = false
@@ -315,6 +316,7 @@ class MainActivity : Activity() {
                 BattleSession.ClientAction.OPEN_CHAT -> showChatComposer()
                 BattleSession.ClientAction.FORFEIT -> confirmForfeit()
                 BattleSession.ClientAction.RESUME_BATTLE -> showUnfinishedBattles()
+                BattleSession.ClientAction.OPEN_ONGOING_BATTLES -> showOngoingBattles()
                 BattleSession.ClientAction.LEAVE_BATTLE -> leaveBattle()
                 BattleSession.ClientAction.CHALLENGE_PLAYER -> showChallengeComposer()
                 BattleSession.ClientAction.EXPORT_REPLAY -> showReplayActions()
@@ -325,6 +327,7 @@ class MainActivity : Activity() {
                 BattleSession.ClientAction.SETTINGS_CHANGED -> {
                     persistUserPreferences()
                     battleAudio.updateOptions(session)
+                    applySceneSprites()
                 }
             }
         }
@@ -732,6 +735,8 @@ class MainActivity : Activity() {
         effects.setPerspective(session.battlePlayerSlot())
         effects.setPlaybackSpeed(replaySpeed)
         effects.setPlaybackPaused(replayPaused || replayPausedForLifecycle || livePlaybackPausedForLifecycle)
+        effects.setDsSprites(session.sceneSprites.usesDsGraphics)
+        appliedSceneSprites = session.sceneSprites
         effects.seed(seedHistory)
         return effects
     }
@@ -6277,11 +6282,50 @@ class MainActivity : Activity() {
     private fun publishUnfinishedBattleCount(promptForNewBattles: Boolean = false) {
         val count = unfinishedBattles.entries().size
         session.setUnfinishedBattleCount(count)
+        session.setOngoingBattleCount(lobbyState.battles.size)
         val shouldPrompt = promptForNewBattles && unfinishedBattles.isReadyToPresent() &&
             activeBattleRoomId == null && !unfinishedBattlesPromptShown
         if (!shouldPrompt) return
         unfinishedBattlesPromptShown = true
         showUnfinishedBattles()
+    }
+
+    /** Lists every battle the account has going; choosing one never opens it without a further tap. */
+    private fun showOngoingBattles() {
+        session.setOngoingBattleCount(lobbyState.battles.size)
+        val rows = ShowdownOngoingBattles.rows(lobbyState.battles, unfinishedBattles.entries(), activeBattleRoomId)
+        if (rows.isEmpty()) {
+            session.setConnectionStatus(ShowdownOngoingBattles.EMPTY_STATUS)
+            return
+        }
+        ShowdownDialogBuilder(this)
+            .setTitle(ShowdownOngoingBattles.TITLE)
+            .setItems(rows.map(ShowdownOngoingBattles.Row::label).toTypedArray()) { _, index -> chooseOngoingBattle(rows[index]) }
+            .setNegativeButton(ShowdownUnfinishedBattlePresentation.LATER_BUTTON, null)
+            .show()
+    }
+
+    private fun chooseOngoingBattle(row: ShowdownOngoingBattles.Row) {
+        when (row.kind) {
+            ShowdownOngoingBattles.Kind.HELD ->
+                unfinishedBattles.entries().firstOrNull { it.roomId == row.roomId }?.let(::showUnfinishedBattleActions)
+            ShowdownOngoingBattles.Kind.OPEN -> session.setConnectionStatus(ShowdownOngoingBattles.OPEN_STATUS)
+            ShowdownOngoingBattles.Kind.JOINABLE -> ShowdownDialogBuilder(this)
+                .setTitle(ShowdownOngoingBattles.JOIN_TITLE)
+                .setMessage(row.label)
+                .setPositiveButton(ShowdownOngoingBattles.JOIN_BUTTON) { _, _ -> openOngoingBattle(row.roomId) }
+                .setNegativeButton(ShowdownUnfinishedBattlePresentation.LATER_BUTTON, null)
+                .show()
+        }
+    }
+
+    private fun openOngoingBattle(roomId: String) {
+        val connection = showdownConnection
+        when {
+            connection == null -> session.setConnectionStatus(ShowdownUnfinishedBattlePresentation.RESUME_UNAVAILABLE_STATUS)
+            activeBattleRoomId != null -> session.setConnectionStatus(ShowdownOngoingBattles.LEAVE_FIRST_STATUS)
+            else -> joinMatchedBattle(connection, roomId)
+        }
     }
 
     private fun showUnfinishedBattles() {
@@ -6483,7 +6527,8 @@ class MainActivity : Activity() {
             soundEffects = preferences.getBoolean("sound_effects", true),
             music = preferences.getBoolean("music", true),
             haptics = preferences.getBoolean("haptics", true),
-            announcer = preferences.getBoolean("announcer", false)
+            announcer = preferences.getBoolean("announcer", false),
+            sceneSprites = BattleSceneSprites.fromName(preferences.getString("scene_sprites", null))
         )
     }
 
@@ -6494,8 +6539,18 @@ class MainActivity : Activity() {
             .putBoolean("haptics", session.hapticsEnabled)
             .putBoolean("announcer", session.announcerEnabled)
             .putString("sprite_style", session.spriteStyle.name)
+            .putString("scene_sprites", session.sceneSprites.name)
             .putBoolean("sprite_style_migrated", true)
             .apply()
+    }
+
+    /** Shows the chosen sprite family in the battle scene; a running scene is rebuilt from history to pick it up. */
+    private fun applySceneSprites() {
+        val sprites = session.sceneSprites
+        val changed = appliedSceneSprites != null && appliedSceneSprites != sprites
+        appliedSceneSprites = sprites
+        showdownMoveEffects?.setDsSprites(sprites.usesDsGraphics)
+        if (changed && showdownMoveEffects != null) seedBattleSceneFromHistory()
     }
 
     private fun handleBattleFeedback(feedback: BattleSession.BattleFeedback) {

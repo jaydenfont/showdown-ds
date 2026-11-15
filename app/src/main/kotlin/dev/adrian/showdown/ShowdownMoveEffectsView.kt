@@ -31,6 +31,7 @@ class ShowdownMoveEffectsView(
     private var javascriptReady = false
     private var playbackPaused = false
     private var playbackSpeed = 1f
+    private var dsSprites = false
     private var battlePerspective = "p1"
     private var animationsDisabledForTesting = false
     private var released = false
@@ -141,6 +142,16 @@ class ShowdownMoveEffectsView(
         flushPendingPackets()
     }
 
+    /** Chooses the Gen 5 (DS) sprites over the 3D ones for sprites the scene creates from now on. */
+    fun setDsSprites(enabled: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { setDsSprites(enabled) }
+            return
+        }
+        dsSprites = enabled
+        runJavascript("window.ShowdownNativeEffects.setDsSprites($enabled);")
+    }
+
     fun setPlaybackPaused(paused: Boolean) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { setPlaybackPaused(paused) }
@@ -248,6 +259,7 @@ class ShowdownMoveEffectsView(
 
     private fun initializeJavascriptIfReady() {
         if (released || !pageLoaded || !javascriptReady) return
+        runJavascript("window.ShowdownNativeEffects.setDsSprites($dsSprites);")
         runJavascript("window.ShowdownNativeEffects.setSpeed($playbackSpeed);")
         runJavascript("window.ShowdownNativeEffects.setPerspective('$battlePerspective');")
         if (animationsDisabledForTesting) {

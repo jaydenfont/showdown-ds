@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -79,6 +80,29 @@ class ShowdownBattleSceneViewTest {
         assertTrue("No tooltip with the foe's details appeared after tapping it; last text: '$tooltip'", tooltip.contains("Mew"))
     }
 
+    @Test
+    fun ShowdownMoveEffectsView_DsSpritesChosen_MakesShowdownUseTheGenerationFiveGraphics() {
+        lateinit var activity: ShowdownLogParityHarnessActivity
+        activityRule.scenario.onActivity { activity = it }
+        activity.runOnUiThread { activity.renderer.setDsSprites(true) }
+        showBattleWithAFoe(activity)
+
+        val preference = activity.evaluate(GRAPHICS_PREFERENCE_SCRIPT)
+
+        assertEquals("\"true\"", preference)
+    }
+
+    @Test
+    fun ShowdownMoveEffectsView_ThreeDSpritesByDefault_MakesShowdownKeepItsOwnGraphics() {
+        lateinit var activity: ShowdownLogParityHarnessActivity
+        activityRule.scenario.onActivity { activity = it }
+        showBattleWithAFoe(activity)
+
+        val preference = activity.evaluate(GRAPHICS_PREFERENCE_SCRIPT)
+
+        assertEquals("\"false\"", preference)
+    }
+
     private fun showBattleWithAFoe(activity: ShowdownLogParityHarnessActivity) {
         val session = BattleSession().apply { setLocalUsername("PLAYER") }
         session.applyProtocolPacket(battleWithAFoe)
@@ -143,6 +167,7 @@ class ShowdownBattleSceneViewTest {
         const val POLL_INTERVAL_MILLIS = 500L
         const val FOE_HIT_BOX_CENTRE_SCRIPT = "(function(){var e=document.querySelector(\".has-tooltip[data-tooltip='activepokemon|1|0']\");" +
             "if(!e)return '';var r=e.getBoundingClientRect();return (r.left+r.width/2)+','+(r.top+r.height/2);})()"
+        const val GRAPHICS_PREFERENCE_SCRIPT = "String(Dex.prefs('bwgfx'))"
         const val TOOLTIP_TEXT_SCRIPT = "(function(){var w=document.getElementById('tooltipwrapper');return w?w.innerText:'';})()"
     }
 }

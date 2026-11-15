@@ -665,6 +665,11 @@
                     battle.add(line);
                 });
             }
+            var dsSprites = false;
+            // Showdown reads its graphics preferences through Storage.prefs; "bwgfx" selects the Gen 5 (DS) sprites.
+            Storage.prefs = function (name) {
+                return name === 'bwgfx' ? dsSprites : undefined;
+            };
             var ownTeam = null;
             function rememberOwnTeam(requestLine) {
                 try {
@@ -761,6 +766,9 @@
                 setSpeed: function (speed) {
                     animationSpeed = Math.max(__PLAYBACK_SPEED_MINIMUM__, Math.min(__PLAYBACK_SPEED_MAXIMUM__, Number(speed) || 1));
                     if (battle) battle.scene.acceleration = animationSpeed;
+                },
+                setDsSprites: function (enabled) {
+                    dsSprites = !!enabled;
                 },
                 setAnimationsDisabledForTesting: function (disabled) {
                     animationsDisabledForTesting = !!disabled;

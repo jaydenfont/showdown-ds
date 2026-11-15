@@ -269,6 +269,15 @@ class BattleSession {
         MODERN_3D("HD-first animated", "xyani")
     }
 
+    /** How a team member is marked on the Pokémon tab while a switch is being chosen. */
+    enum class TeamSelectionMark {
+        /** The member that Switch in would send out now. */
+        SELECTED,
+
+        /** A member whose switch has already been chosen or sent. */
+        CHOSEN
+    }
+
     enum class FeedbackType {
         ENTRY,
         POKEMON_CRY,
@@ -294,6 +303,7 @@ class BattleSession {
         OPEN_CHAT,
         FORFEIT,
         RESUME_BATTLE,
+        OPEN_ONGOING_BATTLES,
         LEAVE_BATTLE,
         CHALLENGE_PLAYER,
         EXPORT_REPLAY,
@@ -689,6 +699,9 @@ class BattleSession {
     private var pendingHit: PendingHit? = null
     private var currentSpreadMoveTargets = emptySet<String>()
     private var requestId: Int? = null
+    private var ongoingBattleCount = 0
+    private var sentSwitchIndex: Int? = null
+    private var sentSwitchRequestId: Int? = null
     private val activeRequests = mutableListOf<JSONObject>()
     private val activeChoices = mutableListOf<String>()
     private val usedGimmickFamilies = mutableSetOf<String>()
@@ -805,6 +818,8 @@ class BattleSession {
     var hapticsEnabled = true
         private set
     var announcerEnabled = false
+        private set
+    var sceneSprites = BattleSceneSprites.THREE_D
         private set
     var spriteStyle = SpriteStyle.MODERN_3D
         private set
@@ -1026,6 +1041,18 @@ class BattleSession {
     fun team() = team.toList()
 
     fun teamPreviewOrder() = teamPreviewOrder.toList()
+
+    /** The mark to draw on a team member's card while a switch is being chosen, or null when it needs none. */
+    fun teamSelectionMark(index: Int): TeamSelectionMark? {
+        if (!decisionAvailable) {
+            return TeamSelectionMark.CHOSEN.takeIf { index == sentSwitchIndex && sentSwitchRequestId == requestId }
+        }
+        val choosingASwitch = decisionKind == DecisionKind.SWITCH || (decisionKind == DecisionKind.MOVE && panel == Panel.TEAM)
+        if (!choosingASwitch) return null
+        if ("switch ${index + 1}" in forceSwitchChoices) return TeamSelectionMark.CHOSEN
+        val fainted = teamCondition(index).contains("FNT", true) && index !in revivingTeamIndices
+        return TeamSelectionMark.SELECTED.takeIf { index == focusedTeam && !fainted && canSwitchTo(index) }
+    }
 
     fun teamPreviewRequiredSize() = teamPreviewRequiredSize
 
@@ -1494,6 +1521,14 @@ class BattleSession {
         notifyListeners()
     }
 
+    /** How many battles the account has in progress; shown on the "Ongoing battles" menu item. */
+    fun setOngoingBattleCount(count: Int) {
+        val next = count.coerceAtLeast(0)
+        if (ongoingBattleCount == next) return
+        ongoingBattleCount = next
+        notifyListeners()
+    }
+
     fun setBattleSearchActive(value: Boolean) {
         if (battleSearchActive == value) return
         battleSearchActive = value
@@ -1704,8 +1739,10 @@ class BattleSession {
         soundEffects: Boolean,
         music: Boolean,
         haptics: Boolean,
-        announcer: Boolean = false
+        announcer: Boolean = false,
+        sceneSprites: BattleSceneSprites = BattleSceneSprites.THREE_D
     ) {
+        this.sceneSprites = sceneSprites
         soundEffectsEnabled = soundEffects
         musicEnabled = music
         hapticsEnabled = haptics
@@ -6409,20 +6446,21 @@ class BattleSession {
         5 -> "Background music ${if (musicEnabled) "on" else "off"}"
         6 -> "Haptics ${if (hapticsEnabled) "on" else "off"}"
         7 -> "PBR announcer ${if (announcerEnabled) "on" else "off"}"
-        8 -> "Sprite style ${spriteStyle.displayName}"
+        8 -> "Sprite style ${sceneSprites.displayName}"
         9 -> "Team library"
         10 -> "Rooms"
         11 -> "Showdown account"
         12 -> "Configure server"
         13 -> if (replayMode) "Replay controls" else "Battle controls"
-        else -> if (battleFinished) "Save replay" else "Battle timer ${if (battleTimerEnabled) "on" else "off"}"
+        TIMER_MENU_INDEX -> if (battleFinished) "Save replay" else "Battle timer ${if (battleTimerEnabled) "on" else "off"}"
+        else -> if (ongoingBattleCount > 0) "Ongoing battles ($ongoingBattleCount)" else "Ongoing battles"
     }
 
     private fun applyMenuSelection() {
         if (focusedMenuItem == 0) {
             status = "Connecting to a ${matchFormatDisplayLabel()}…"
             publishClientAction(ClientAction.FIND_BATTLE)
-        } else if (focusedMenuItem == MENU_ITEM_COUNT - 1 && !battleFinished) {
+        } else if (focusedMenuItem == TIMER_MENU_INDEX && !battleFinished) {
             publishClientAction(ClientAction.TOGGLE_BATTLE_TIMER)
         } else {
             status = when (focusedMenuItem) {
@@ -6468,8 +6506,8 @@ class BattleSession {
                     "PBR announcer ${if (announcerEnabled) "enabled." else "disabled."}"
                 }
                 8 -> {
-                    spriteStyle = SpriteStyle.MODERN_3D
-                    "HD-first animated sprite style enabled."
+                    sceneSprites = sceneSprites.next()
+                    "${sceneSprites.displayName} sprites enabled."
                 }
                 9 -> {
                     publishClientAction(ClientAction.CONFIGURE_TEAM)
@@ -6491,13 +6529,17 @@ class BattleSession {
                     publishClientAction(ClientAction.OPEN_REPLAY_CONTROLS)
                     "Adjust battle playback."
                 }
-                else -> {
+                TIMER_MENU_INDEX -> {
                     if (battleFinished) {
                         publishClientAction(ClientAction.SAVE_REPLAY)
                         "Saving the battle replay."
                     } else {
                         "Battle timer ${if (battleTimerEnabled) "stopping" else "starting"}."
                     }
+                }
+                else -> {
+                    publishClientAction(ClientAction.OPEN_ONGOING_BATTLES)
+                    status
                 }
             }
         }
@@ -6698,6 +6740,8 @@ class BattleSession {
     }
 
     private fun completeTeamSelection(choice: String) {
+        sentSwitchIndex = SENT_SWITCH_PATTERN.find(choice)?.groupValues?.get(1)?.toIntOrNull()?.minus(1)
+        sentSwitchRequestId = requestId
         decisionAvailable = false
         choiceCanBeCancelled = !requestNoCancel
         status = "Queued: ${teamDisplayName(focusedTeam)}"
@@ -7287,7 +7331,9 @@ class BattleSession {
     }
 
     companion object {
-        const val MENU_ITEM_COUNT = 15
+        private val SENT_SWITCH_PATTERN = Regex("""switch (\d+)""")
+        const val TIMER_MENU_INDEX = 14
+        const val MENU_ITEM_COUNT = 16
         const val MENU_COLUMNS = 3
         private const val LOBBY_STATUS = "Find a battle or challenge a player."
         private const val BATTLE_HISTORY_LIMIT = 1024

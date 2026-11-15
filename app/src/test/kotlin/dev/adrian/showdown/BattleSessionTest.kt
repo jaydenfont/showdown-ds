@@ -4093,21 +4093,6 @@ class BattleSessionTest {
     }
 
     @Test
-    fun spriteMenuNamesTheShowdownSpriteFamilyThatWillBeUsed() {
-        val session = BattleSession()
-
-        session.selectPanel(BattleSession.Panel.MENU)
-        assertEquals("Sprite style HD-first animated", session.menuItems()[8])
-
-        session.selectMenuItem(8)
-        session.confirmSelection()
-
-        assertEquals(BattleSession.SpriteStyle.MODERN_3D, session.spriteStyle)
-        assertEquals("Sprite style HD-first animated", session.menuItems()[8])
-        assertEquals("HD-first animated sprite style enabled.", session.status)
-    }
-
-    @Test
     fun changingClientSettingsEmitsASettingsChangedAction() {
         val session = BattleSession()
         val actions = mutableListOf<BattleSession.ClientAction>()
