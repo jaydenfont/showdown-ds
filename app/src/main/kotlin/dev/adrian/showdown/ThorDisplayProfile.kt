@@ -20,10 +20,21 @@ object ThorDisplayProfile {
     const val ENCLOSURE_HEIGHT_MILLIMETRES = 94f
     const val ENCLOSURE_DEPTH_MILLIMETRES = 25.6f
     const val LOWER_MINIMUM_TEXT_SP = 18f
+    const val UPPER_DISPLAY_ID = 0
 
     fun isThorLowerDisplay(widthPixels: Int, heightPixels: Int): Boolean =
         (widthPixels == LOWER_WIDTH_PIXELS && heightPixels == LOWER_HEIGHT_PIXELS) ||
             (widthPixels == LOWER_HEIGHT_PIXELS && heightPixels == LOWER_WIDTH_PIXELS)
+
+    /** The app's main screen belongs on the upper display; started from the lower launcher it must move there. */
+    fun shouldMoveToUpperDisplay(
+        currentDisplayId: Int,
+        currentWidthPixels: Int,
+        currentHeightPixels: Int,
+        upperDisplayAvailable: Boolean
+    ): Boolean = upperDisplayAvailable &&
+        currentDisplayId != UPPER_DISPLAY_ID &&
+        isThorLowerDisplay(currentWidthPixels, currentHeightPixels)
 
     fun kindFor(widthPixels: Int, heightPixels: Int): ThorDisplayKind = if (
         widthPixels <= 1400 && heightPixels >= 900 && widthPixels.toFloat() / heightPixels < 1.4f

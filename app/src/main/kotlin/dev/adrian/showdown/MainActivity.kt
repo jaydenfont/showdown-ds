@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.app.Presentation
 import android.content.ComponentCallbacks2
+import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -345,6 +346,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (relaunchOnUpperDisplayIfNeeded()) return
         configureWindow()
         serverEndpoint = loadServerEndpoint()
         credentialsStore = ShowdownCredentialsStore(this)
@@ -741,6 +743,28 @@ class MainActivity : Activity() {
         battleScene?.visibility = View.VISIBLE
         effects.release()
     }
+
+    /** Started from the lower screen's launcher, the app restarts itself on the upper display, where it belongs. */
+    private fun relaunchOnUpperDisplayIfNeeded(): Boolean {
+        val manager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val current = currentDisplay()
+        val mode = current.mode
+        val moveUp = ThorDisplayProfile.shouldMoveToUpperDisplay(
+            current.displayId,
+            mode.physicalWidth,
+            mode.physicalHeight,
+            manager.getDisplay(ThorDisplayProfile.UPPER_DISPLAY_ID) != null
+        )
+        if (!moveUp) return false
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(ThorDisplayProfile.UPPER_DISPLAY_ID)
+        startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK), options.toBundle())
+        finish()
+        return true
+    }
+
+    @Suppress("DEPRECATION")
+    private fun currentDisplay(): Display =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display ?: windowManager.defaultDisplay else windowManager.defaultDisplay
 
     private fun showSecondaryDisplay() {
         if (isFinishing || displayManager == null) return
@@ -2504,10 +2528,16 @@ class MainActivity : Activity() {
         pendingSearch = savedInstanceState?.getBoolean("pending_search") ?: preferences.getBoolean("pending_search", false)
         pendingSearchTeamPacked = savedInstanceState?.getString("pending_search_team") ?: preferences.getString("pending_search_team", null)
         pendingLobbyStatus = savedInstanceState?.getString("pending_lobby_status") ?: preferences.getString("pending_lobby_status", null)
-        pendingLobbyCommands = savedInstanceState?.getStringArrayList("pending_lobby_commands")?.takeIf { it.isNotEmpty() }
-            ?: decodeLobbyCommands(preferences.getString("pending_lobby_commands", null))
-        reconnectLobbyCommands = savedInstanceState?.getStringArrayList("reconnect_lobby_commands")?.takeIf { it.isNotEmpty() }
-            ?: decodeLobbyCommands(preferences.getString("reconnect_lobby_commands", null))
+        pendingLobbyCommands = ShowdownBattleRecovery.restoredLobbyCommands(
+            savedInstanceState?.getStringArrayList("pending_lobby_commands")?.takeIf { it.isNotEmpty() }
+                ?: decodeLobbyCommands(preferences.getString("pending_lobby_commands", null)),
+            hasSavedInstance
+        )
+        reconnectLobbyCommands = ShowdownBattleRecovery.restoredLobbyCommands(
+            savedInstanceState?.getStringArrayList("reconnect_lobby_commands")?.takeIf { it.isNotEmpty() }
+                ?: decodeLobbyCommands(preferences.getString("reconnect_lobby_commands", null)),
+            hasSavedInstance
+        )
         pendingRoomListOpen = if (savedInstanceState?.containsKey("pending_room_list_open") == true) {
             savedInstanceState.getBoolean("pending_room_list_open")
         } else {
@@ -2523,12 +2553,16 @@ class MainActivity : Activity() {
         } else {
             preferences.getBoolean("pending_lobby_chat_open", false)
         }
-        activeSearchFormat = (savedInstanceState?.getString("active_search_format") ?: preferences.getString("active_search_format", null))
-            ?.let { ShowdownFormatCompatibility.canonicalId(it) }
+        val recreated = hasSavedInstance
+        pendingSearch = ShowdownBattleRecovery.restoredSearchActive(pendingSearch, recreated)
+        activeSearchFormat = ShowdownBattleRecovery.restoredSearchFormat(
+            savedInstanceState?.getString("active_search_format") ?: preferences.getString("active_search_format", null),
+            recreated
+        )?.let { ShowdownFormatCompatibility.canonicalId(it) }
         session.setBattleSearchActive(pendingSearch || activeSearchFormat != null)
         activeBattleRoomId = ShowdownBattleRecovery.restoredActiveRoomId(
             savedInstanceState?.getString("active_battle_room") ?: preferences.getString("active_battle_room", null),
-            debuggableBuild = BuildConfig.DEBUG
+            recreated
         )
         val hasSavedBattleIdentity = savedInstanceState?.containsKey("battle_participant") == true || preferences.contains("battle_participant")
         battleWasRegistered = if (savedInstanceState?.containsKey("battle_registered") == true) {

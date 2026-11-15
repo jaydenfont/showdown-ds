@@ -372,4 +372,52 @@ class ThorDisplayProfileTest {
         assertTrue(runScript.contains("lower_input_y_origin_count"))
         assertTrue(runScript.contains("pos_y = totalH - iter\\.second\\.height - iter\\.second\\.pos_y;"))
     }
+
+    @Test
+    fun ThorDisplayProfile_ActivityOnTheLowerDisplayWithAnUpperDisplay_MovesToTheUpperDisplay() {
+        val move = ThorDisplayProfile.shouldMoveToUpperDisplay(
+            currentDisplayId = 4,
+            currentWidthPixels = 1240,
+            currentHeightPixels = 1080,
+            upperDisplayAvailable = true
+        )
+
+        assertTrue(move)
+    }
+
+    @Test
+    fun ThorDisplayProfile_ActivityOnTheDefaultDisplay_StaysWhereItIs() {
+        val move = ThorDisplayProfile.shouldMoveToUpperDisplay(
+            currentDisplayId = 0,
+            currentWidthPixels = 1920,
+            currentHeightPixels = 1080,
+            upperDisplayAvailable = true
+        )
+
+        assertFalse(move)
+    }
+
+    @Test
+    fun ThorDisplayProfile_LowerSizedDisplayWithoutAnUpperDisplay_StaysWhereItIs() {
+        val move = ThorDisplayProfile.shouldMoveToUpperDisplay(
+            currentDisplayId = 0,
+            currentWidthPixels = 1240,
+            currentHeightPixels = 1080,
+            upperDisplayAvailable = false
+        )
+
+        assertFalse(move)
+    }
+
+    @Test
+    fun ThorDisplayProfile_ActivityOnAnotherDisplayOfADifferentSize_StaysWhereItIs() {
+        val move = ThorDisplayProfile.shouldMoveToUpperDisplay(
+            currentDisplayId = 3,
+            currentWidthPixels = 1920,
+            currentHeightPixels = 1080,
+            upperDisplayAvailable = true
+        )
+
+        assertFalse(move)
+    }
 }
