@@ -975,11 +975,33 @@ class CommandDeckView(
             return
         }
         when (session.panel) {
-            BattleSession.Panel.MOVES -> drawMoves(canvas, width, height, scale)
+            BattleSession.Panel.MOVES -> {
+                drawMoves(canvas, width, height, scale)
+                session.queuedSwitchTarget()?.let { target -> drawQueuedSwitchBanner(canvas, width, height, scale, target) }
+            }
             BattleSession.Panel.TEAM -> drawTeam(canvas, width, height, scale)
             BattleSession.Panel.ACTIVITY -> drawActivity(canvas, width, height, scale)
             BattleSession.Panel.MENU -> drawMenu(canvas, width, height, scale)
         }
+    }
+
+    /** A banner under the move list that says who a queued switch will bring in, while the server waits for the other player. */
+    private fun drawQueuedSwitchBanner(canvas: Canvas, width: Float, height: Float, scale: Float, target: String) {
+        val margin = 36f * scale
+        val banner = RectF(margin, height - 180f * scale, width - margin, height - 36f * scale)
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(235, 232, 181, 58)
+        canvas.drawRoundRect(banner, 28f * scale, 28f * scale, paint)
+        paint.color = Color.rgb(40, 28, 4)
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+        paint.textSize = fittedTextSize("Switching to $target", banner.width() - 48f * scale, readableTextSize(40f, scale), readableTextSize(24f, scale, 20f))
+        canvas.drawText("Switching to $target", banner.centerX(), banner.centerY() - 6f * scale, paint)
+        paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+        paint.textSize = readableTextSize(26f, scale, 20f)
+        canvas.drawText("Waiting for the other player…", banner.centerX(), banner.centerY() + 38f * scale, paint)
+        paint.textAlign = Paint.Align.LEFT
     }
 
     private fun drawTeamDecisionPanel(canvas: Canvas, width: Float, height: Float, scale: Float) {

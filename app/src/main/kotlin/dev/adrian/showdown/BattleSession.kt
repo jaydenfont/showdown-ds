@@ -700,8 +700,8 @@ class BattleSession {
     private var currentSpreadMoveTargets = emptySet<String>()
     private var requestId: Int? = null
     private var ongoingBattleCount = 0
-    private var sentSwitchIndex: Int? = null
-    private var sentSwitchRequestId: Int? = null
+    private var sentSwitchIndices: Set<Int> = emptySet()
+    private var sentChoiceRequestId: Int? = null
     private val activeRequests = mutableListOf<JSONObject>()
     private val activeChoices = mutableListOf<String>()
     private val usedGimmickFamilies = mutableSetOf<String>()
@@ -1045,8 +1045,9 @@ class BattleSession {
     /** The mark to draw on a team member's card while a switch is being chosen, or null when it needs none. */
     fun teamSelectionMark(index: Int): TeamSelectionMark? {
         if (!decisionAvailable) {
-            return TeamSelectionMark.CHOSEN.takeIf { index == sentSwitchIndex && sentSwitchRequestId == requestId }
+            return TeamSelectionMark.CHOSEN.takeIf { index in sentSwitchIndices && sentChoiceRequestId == requestId }
         }
+        if ("switch ${index + 1}" in activeChoices) return TeamSelectionMark.CHOSEN
         val choosingASwitch = decisionKind == DecisionKind.SWITCH || (decisionKind == DecisionKind.MOVE && panel == Panel.TEAM)
         if (!choosingASwitch) return null
         if ("switch ${index + 1}" in forceSwitchChoices) return TeamSelectionMark.CHOSEN
@@ -1346,14 +1347,24 @@ class BattleSession {
                     if (previewPosition >= 0) "Order ${previewPosition + 1}/$teamPreviewRequiredSize" else "Tap to order"
                 }
             }
-            pokemon?.let { it.equals(playerPokemon, true) || details?.matchesIdentifier(playerPokemon) == true } == true -> "In battle"
+            pokemon?.let { it.equals(playerPokemon, true) || details?.matchesIdentifier(playerPokemon) == true } == true ->
+                if (decisionKind == DecisionKind.MOVE && switchQueued()) "Switching out" else "In battle"
             decisionKind == DecisionKind.SWITCH && "switch ${index + 1}" in forceSwitchChoices -> {
                 val selectedCount = forceSwitchChoices.count { it.startsWith("switch ") }
                 if (requiredSwitches > 1) "Selected $selectedCount/$requiredSwitches" else "Selected"
             }
             decisionKind == DecisionKind.SWITCH -> if (decisionAvailable) "Switch in" else "Waiting"
+            teamSelectionMark(index) == TeamSelectionMark.CHOSEN -> "Switching in"
             else -> "Available"
         }
+    }
+
+    private fun switchQueued() = team.indices.any { teamSelectionMark(it) == TeamSelectionMark.CHOSEN }
+
+    /** Who a sent switch is bringing in (several names in doubles), or null when no switch is waiting on the server. */
+    fun queuedSwitchTarget(): String? {
+        if (decisionAvailable || sentChoiceRequestId != requestId) return null
+        return sentSwitchIndices.sorted().map(::teamDisplayName).takeIf { it.isNotEmpty() }?.joinToString(" & ")
     }
 
     fun opponentTeamCardStatus(index: Int): String {
@@ -1936,7 +1947,7 @@ class BattleSession {
                 choiceCanBeCancelled = !requestNoCancel && !choiceMayNotBeCancelled
                 selectedGimmick = null
                 selectedTargetIndex = -1
-                decisionListeners.toList().forEach { it.onDecision(choice) }
+                emitDecision(choice)
             }
             Panel.TEAM -> confirmTeamSelection()
             Panel.ACTIVITY -> publishClientAction(ClientAction.OPEN_CHAT)
@@ -4477,7 +4488,7 @@ class BattleSession {
         status = "Choice sent. Waiting for the other player…"
         chatMessages += "[You] $choice"
         if (chatMessages.size > 32) chatMessages.removeAt(0)
-        decisionListeners.toList().forEach { it.onDecision(choice) }
+        emitDecision(choice)
         return true
     }
 
@@ -6636,7 +6647,7 @@ class BattleSession {
         status = "Choice sent. Waiting for the other player…"
         chatMessages += "[You] $choice"
         if (chatMessages.size > 32) chatMessages.removeAt(0)
-        decisionListeners.toList().forEach { it.onDecision(choice) }
+        emitDecision(choice)
     }
 
     private fun serializeForcedSwitchChoices(): String {
@@ -6701,7 +6712,7 @@ class BattleSession {
         selectedGimmick = null
         selectedTargetIndex = -1
         targetOptions.clear()
-        decisionListeners.toList().forEach { it.onDecision(choice) }
+        emitDecision(choice)
         notifyListeners()
     }
 
@@ -6723,7 +6734,7 @@ class BattleSession {
         if (chatMessages.size > 32) chatMessages.removeAt(0)
         decisionAvailable = false
         choiceCanBeCancelled = !requestNoCancel
-        decisionListeners.toList().forEach { it.onDecision(choice) }
+        emitDecision(choice)
     }
 
     private fun submitTestFight() {
@@ -6736,19 +6747,24 @@ class BattleSession {
         selectedGimmick = null
         selectedTargetIndex = -1
         targetOptions.clear()
+        emitDecision(choice)
+    }
+
+    /** Sends a decision to the listeners and remembers which switches it queued, for the team cards. */
+    private fun emitDecision(choice: String) {
+        sentSwitchIndices = SENT_SWITCH_PATTERN.findAll(choice).mapNotNull { it.groupValues[1].toIntOrNull()?.minus(1) }.toSet()
+        sentChoiceRequestId = requestId
         decisionListeners.toList().forEach { it.onDecision(choice) }
     }
 
     private fun completeTeamSelection(choice: String) {
-        sentSwitchIndex = SENT_SWITCH_PATTERN.find(choice)?.groupValues?.get(1)?.toIntOrNull()?.minus(1)
-        sentSwitchRequestId = requestId
         decisionAvailable = false
         choiceCanBeCancelled = !requestNoCancel
         status = "Queued: ${teamDisplayName(focusedTeam)}"
         appendLog(if (choice.startsWith("/choose team")) "Team order submitted." else "${teamDisplayName(focusedTeam)} was selected.")
         chatMessages += "[You] $choice"
         if (chatMessages.size > 32) chatMessages.removeAt(0)
-        decisionListeners.toList().forEach { it.onDecision(choice) }
+        emitDecision(choice)
     }
 
     private fun teamPreviewPrompt() = if (teamPreviewRequiredSize > 0) {
