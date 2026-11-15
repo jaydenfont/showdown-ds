@@ -62,3 +62,4 @@ Tests: `ShowdownUnfinishedBattlesTest`, `ShowdownLobbyReconnectExclusionTest`, `
 - Found the installed `v0.2.0-alpha.1` APK was built from `main` (old native renderer); fixed the release workflow checkout.
 - The new build on the Thor showed the scene lagging the real battle: a rejoined battle's history was animated at normal speed. Added `ShowdownBattleHistory.isInProgress` (tests first) and routed such packets through the silent catch-up that Resume already used.
 - Thor facts: Android 13, WebView 109, app UI thread smooth (0 janky frames in 8 s); the web content renders in a separate process.
+- Live battle packets now go straight to the web scene (`ShowdownBattleDelivery.forRoomPacket`); only replays use the paced queue. Checked on the emulator with a bot: the move animation started about 2 s after choosing it and the whole turn finished in about 10 s.

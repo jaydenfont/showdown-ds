@@ -3083,10 +3083,9 @@ class MainActivity : Activity() {
         if (battleIsSpectator) session.setSpectatorMode(true)
         if (!battleIsSpectator && battleWasParticipant) session.setBattleParticipant(true)
         reconcilePendingDecisionCommand(lines)
-        when {
-            fastForward -> applyBattlePacketsInstantly(connection, roomId, lines)
-            ShowdownBattleHistory.isInProgress(lines) -> catchUpToBattleHistory(connection, roomId, lines)
-            else -> enqueueBattlePlayback(connection, roomId, lines)
+        when (ShowdownBattleDelivery.forRoomPacket(lines, fastForward)) {
+            ShowdownBattleDelivery.Mode.APPLY_NOW -> applyBattlePacketsInstantly(connection, roomId, lines)
+            ShowdownBattleDelivery.Mode.CATCH_UP_FROM_HISTORY -> catchUpToBattleHistory(connection, roomId, lines)
         }
     }
 
