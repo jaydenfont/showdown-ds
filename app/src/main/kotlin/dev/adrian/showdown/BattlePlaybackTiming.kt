@@ -41,6 +41,13 @@ object BattlePlaybackTiming {
         return maxOf(actionPause, messageCount * MESSAGE_PAUSE_MILLIS)
     }
 
+    /**
+     * Fixed pause before the next chunk is applied. When the web scene is running it reports when its own animation
+     * has finished, so it alone sets the pace; the fixed pause only stands in when there is no scene to wait for.
+     */
+    fun pauseBeforeNextChunk(lines: List<String>, generatedMessageCount: Int, sceneSetsThePace: Boolean): Long =
+        if (sceneSetsThePace) 0L else pauseAfter(lines, generatedMessageCount)
+
     fun isDecisionChunk(lines: List<String>): Boolean = lines.any { it.startsWith("|request|") }
 
     fun scaledPause(pauseMillis: Long, speed: Float): Long {

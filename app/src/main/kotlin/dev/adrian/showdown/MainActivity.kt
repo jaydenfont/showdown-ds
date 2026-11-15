@@ -937,7 +937,9 @@ class MainActivity : Activity() {
         }
         handleAppliedBattlePacket(packet)
         val generatedMessageCount = session.battleFeedMessages().count { it.id !in previousMessageIds }
-        scheduleBattlePlayback(BattlePlaybackTiming.pauseAfter(packet.lines, generatedMessageCount))
+        scheduleBattlePlayback(
+            BattlePlaybackTiming.pauseBeforeNextChunk(packet.lines, generatedMessageCount, sceneSetsThePace = activeBattleEffectsBarrierToken != null)
+        )
     }
 
     private fun createBattleEffectsBarrierToken(packet: PendingBattlePacket): Long? {
