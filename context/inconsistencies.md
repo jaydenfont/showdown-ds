@@ -23,3 +23,5 @@ Behavior that looks wrong or inconsistent, found while working. Newest first.
 - **The `.debug` app reopened the same battle on every launch.** Fixed in step 2; see `worklog.md`.
 
 - **Release workflow built the wrong commit.** A manual `workflow_dispatch` run on `main` checked out `main`, not the tag it was given, so `v0.2.0-alpha.1` shipped the old native renderer (terrain layer covering the scene). Fixed by checking out `inputs.tag || github.ref`. Verified on the device: the APK had no `showdown-battle-scene.html` and still contained `BattleSceneView`.
+
+- **Rejoined battles replayed in real time in release builds.** Release builds restore the saved battle room on start, and Showdown answers with the whole history in one packet. It was played back with animations, so the top screen trailed the real battle by minutes while the lower screen showed the current turn. Observed on the Thor (WebView 109) in a live battle. Fixed by treating an opening packet that is already past turn 1 (or has moves) as history and seeding the scene silently (`ShowdownBattleHistory`).

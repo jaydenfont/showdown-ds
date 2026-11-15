@@ -3081,7 +3081,11 @@ class MainActivity : Activity() {
         if (battleIsSpectator) session.setSpectatorMode(true)
         if (!battleIsSpectator && battleWasParticipant) session.setBattleParticipant(true)
         reconcilePendingDecisionCommand(lines)
-        if (fastForward) applyBattlePacketsInstantly(connection, roomId, lines) else enqueueBattlePlayback(connection, roomId, lines)
+        when {
+            fastForward -> applyBattlePacketsInstantly(connection, roomId, lines)
+            ShowdownBattleHistory.isInProgress(lines) -> catchUpToBattleHistory(connection, roomId, lines)
+            else -> enqueueBattlePlayback(connection, roomId, lines)
+        }
     }
 
     private fun joinMatchedBattle(connection: ShowdownConnection, roomId: String) {
@@ -6286,6 +6290,21 @@ class MainActivity : Activity() {
         } finally {
             fastForwardingBattleHistory = false
         }
+        seedBattleSceneFromHistory()
+    }
+
+    /** Catches up to a room packet that already holds past turns, without playing them back. */
+    private fun catchUpToBattleHistory(connection: ShowdownConnection, roomId: String, lines: List<String>) {
+        fastForwardingBattleHistory = true
+        try {
+            applyBattlePacketsInstantly(connection, roomId, lines)
+        } finally {
+            fastForwardingBattleHistory = false
+        }
+        seedBattleSceneFromHistory()
+    }
+
+    private fun seedBattleSceneFromHistory() {
         releaseShowdownMoveEffects()
         battleEffectsBarrierSequence += 1L
         ensureShowdownMoveEffects(emptyList())?.recoverFromProtocolHistory(session.protocolHistory(), battleEffectsBarrierSequence)

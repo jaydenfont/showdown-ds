@@ -57,3 +57,8 @@ Tests: `ShowdownUnfinishedBattlesTest`, `ShowdownLobbyReconnectExclusionTest`, `
 - Added `scripts/local-showdown.sh` (pinned upstream server from the CI workflow, guest logins) and `tools/local-showdown/bot.ts` (TypeScript, Node 22 type stripping, built-in WebSocket; modes `search`, `challenge`, `accept`, optional `--stall-after-turn`). Verified two bots finish a battle against each other.
 - Added `build.sh` (`--variant`, `--test`), `emulate.sh` (reuses a running emulator, builds, sideloads, launches) and `AGENTS.md`.
 - Verified: `./emulate.sh` installs `.local` next to the untouched `.debug` install; the `.local` app starts in a clean lobby.
+
+## 2026-11-15: device check on the Thor
+- Found the installed `v0.2.0-alpha.1` APK was built from `main` (old native renderer); fixed the release workflow checkout.
+- The new build on the Thor showed the scene lagging the real battle: a rejoined battle's history was animated at normal speed. Added `ShowdownBattleHistory.isInProgress` (tests first) and routed such packets through the silent catch-up that Resume already used.
+- Thor facts: Android 13, WebView 109, app UI thread smooth (0 janky frames in 8 s); the web content renders in a separate process.
